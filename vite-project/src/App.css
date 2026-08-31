@@ -274,22 +274,28 @@
 }
 
 /* ==========================================================================
-   3.5 SECTION: REALM CINEMATIC VIDEO (ONE.MP4)
+   3.5 SECTION: REALM SCROLLYTELLING VIDEO (ONE.MP4)
    ========================================================================== */
-.realm-video-section {
+.realm-scrollytelling-section {
   position: relative;
+  width: 100%;
+  height: 420vh;
+  background-color: var(--bg-deep);
+}
+
+.realm-sticky-stage {
+  position: sticky;
+  top: 0;
   width: 100%;
   height: 100vh;
   height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
-  text-align: center;
   overflow: hidden;
-  background-color: var(--bg-deep);
 }
 
-.realm-video-wrapper {
+.realm-video-canvas-wrapper {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -297,14 +303,15 @@
   z-index: 1;
 }
 
-.realm-video {
+.realm-scrolly-video {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: brightness(0.85) contrast(1.08);
+  filter: brightness(0.8) contrast(1.1);
+  transform: scale(1.02);
 }
 
-.realm-overlay-top {
+.realm-overlay-top-blend {
   position: absolute;
   top: 0;
   left: 0;
@@ -315,15 +322,15 @@
   z-index: 2;
 }
 
-.realm-overlay-radial {
+.realm-overlay-vignette {
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at 50% 50%, rgba(5, 5, 5, 0.2) 0%, rgba(5, 5, 5, 0.65) 90%);
+  background: radial-gradient(circle at 50% 50%, rgba(5, 5, 5, 0.15) 0%, rgba(5, 5, 5, 0.7) 90%);
   pointer-events: none;
   z-index: 2;
 }
 
-.realm-overlay-bottom {
+.realm-overlay-bottom-blend {
   position: absolute;
   bottom: 0;
   left: 0;
@@ -334,43 +341,141 @@
   z-index: 2;
 }
 
-.realm-caption {
+/* Story Card Overlay */
+.realm-story-overlay {
   position: relative;
   z-index: 10;
+  width: 100%;
+  max-width: 920px;
+  padding: 0 2rem;
+  display: flex;
+  justify-content: center;
+  text-align: center;
+}
+
+.realm-story-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(10, 10, 10, 0.55);
+  padding: 2.2rem 3rem;
+  border-radius: 12px;
+  border: 1px solid rgba(201, 154, 46, 0.25);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 16px 45px rgba(0, 0, 0, 0.85);
+  max-width: 680px;
+}
+
+.realm-story-tag {
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--gold-accent);
+  margin-bottom: 0.6rem;
+}
+
+.realm-story-title {
+  font-family: var(--font-serif-title);
+  font-size: clamp(1.6rem, 3.8vw, 2.8rem);
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-ivory);
+  text-shadow: 0 4px 20px rgba(0, 0, 0, 0.9);
+  line-height: 1.2;
+}
+
+.realm-story-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 120px;
+  margin: 1.2rem 0;
+}
+
+.story-divider-line {
+  flex: 1;
+  height: 1px;
+  background: rgba(201, 154, 46, 0.4);
+}
+
+.story-divider-diamond {
+  width: 4px;
+  height: 4px;
+  background-color: var(--gold-accent);
+  transform: rotate(45deg);
+}
+
+.realm-story-lore {
+  font-family: var(--font-serif-body);
+  font-size: clamp(1.05rem, 1.5vw, 1.28rem);
+  line-height: 1.65;
+  color: #DDD6C8;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
+}
+
+/* Video Timeline Tracker */
+.realm-timeline-tracker {
+  position: absolute;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 0 2rem;
-  max-width: 900px;
 }
 
-.realm-caption-rune {
-  color: var(--gold-accent);
-  font-size: 1rem;
-  opacity: 0.8;
-  margin-bottom: 0.2rem;
-}
-
-.realm-caption-title {
+.timeline-counter {
   font-family: var(--font-serif-title);
-  font-size: clamp(1.8rem, 4.5vw, 3.5rem);
-  font-weight: 700;
-  letter-spacing: 0.25em;
-  text-transform: uppercase;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.15em;
   color: var(--text-ivory);
-  text-shadow: 0 4px 25px rgba(0, 0, 0, 0.95);
 }
 
-.realm-caption-sub {
-  font-family: var(--font-sans);
-  font-size: clamp(0.68rem, 1.2vw, 0.85rem);
-  font-weight: 500;
-  letter-spacing: 0.32em;
-  text-transform: uppercase;
+.timeline-sep {
   color: var(--gold-accent);
-  text-shadow: 0 2px 15px rgba(0, 0, 0, 0.9);
+  margin: 0 4px;
+  opacity: 0.6;
 }
+
+.timeline-bar-bg {
+  width: 140px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.timeline-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(to right, var(--gold-accent), #FFE494);
+  box-shadow: 0 0 8px var(--gold-accent);
+}
+
+.timeline-label {
+  font-family: var(--font-sans);
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+  .realm-scrollytelling-section {
+    height: 350vh;
+  }
+  .realm-story-card {
+    padding: 1.5rem 1.8rem;
+  }
+}
+
 
 /* ==========================================================================
    4. SECTION 2: THE WORLD IS DIVIDED (STICKY SCROLL)
