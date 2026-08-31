@@ -5,6 +5,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import AmbientAtmosphere from './components/AmbientAtmosphere'
 import ScrollProgress from './components/ScrollProgress'
 import HeroVideo from './components/HeroVideo'
+import RealmVideo from './components/RealmVideo'
 import DividedWorld from './components/DividedWorld'
 import HouseChapter from './components/HouseChapter'
 import ClimaxSection from './components/ClimaxSection'
@@ -42,10 +43,13 @@ function App() {
 
       {/* Main Continuous Scrollytelling Experience */}
       <main className="got-story-flow">
-        {/* Section 1: 100vh Fullscreen Cinematic Video */}
+        {/* Section 1: 100vh Fullscreen Dragon Battle Opening */}
         <HeroVideo />
 
-        {/* Section 2: "A World Divided by Power..." Sticky Transition */}
+        {/* Section 2: Fullscreen Realm Journey Video (one.mp4) in line */}
+        <RealmVideo />
+
+        {/* Section 3: "A World Divided by Power..." Sticky Transition */}
         <DividedWorld />
 
         {/* Cinematic House Chapters */}
