@@ -17,6 +17,7 @@ const RealmVideo = () => {
   const [videoReady, setVideoReady] = useState(false)
 
   const isPinnedRef = useRef(false)
+  const hasStartedAudioRef = useRef(false)
   const scrollTimeoutRef = useRef(null)
 
   // Web Audio API refs for studio-quality, zero-latency playback
@@ -27,22 +28,14 @@ const RealmVideo = () => {
 
   // Web Audio + HTML5 Audio playback controller
   const startSoundtrack = () => {
+    hasStartedAudioRef.current = true
     const ctx = audioCtxRef.current
     const buffer = audioBufferRef.current
 
     // Primary: Web Audio API (High volume, zero lag, bypasses element locks)
-    if (ctx && buffer) {
+    if (ctx && buffer && !audioSourceRef.current) {
       if (ctx.state === 'suspended') {
         ctx.resume().catch(() => {})
-      }
-
-      // Stop existing source if any
-      if (audioSourceRef.current) {
-        try {
-          audioSourceRef.current.stop()
-          audioSourceRef.current.disconnect()
-        } catch (_) {}
-        audioSourceRef.current = null
       }
 
       try {
@@ -64,8 +57,7 @@ const RealmVideo = () => {
 
     // Secondary Fallback: HTML5 Audio
     const audio = audioRef.current
-    if (audio) {
-      audio.currentTime = 0
+    if (audio && audio.paused) {
       audio.volume = 1.0
       audio.muted = false
       audio.play().catch(() => {})
@@ -73,6 +65,7 @@ const RealmVideo = () => {
   }
 
   const stopSoundtrack = () => {
+    hasStartedAudioRef.current = false
     // Stop Web Audio
     if (audioSourceRef.current) {
       try {
@@ -105,8 +98,8 @@ const RealmVideo = () => {
         .then((arrBuf) => ctx.decodeAudioData(arrBuf))
         .then((decoded) => {
           audioBufferRef.current = decoded
-          // If the user is already inside Realm section when audio finishes loading, start immediately!
-          if (isPinnedRef.current) {
+          // If the user has reached Realm section or started audio, start immediately!
+          if (isPinnedRef.current || hasStartedAudioRef.current) {
             startSoundtrack()
           }
         })
@@ -117,7 +110,7 @@ const RealmVideo = () => {
             .then((arrBuf) => ctx.decodeAudioData(arrBuf))
             .then((decoded) => {
               audioBufferRef.current = decoded
-              if (isPinnedRef.current) {
+              if (isPinnedRef.current || hasStartedAudioRef.current) {
                 startSoundtrack()
               }
             })
@@ -129,8 +122,13 @@ const RealmVideo = () => {
       if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
         audioCtxRef.current.resume().catch(() => {})
       }
-      if (audioRef.current && isPinnedRef.current && audioRef.current.paused) {
-        audioRef.current.play().catch(() => {})
+      if (hasStartedAudioRef.current) {
+        if (!audioSourceRef.current && audioBufferRef.current) {
+          startSoundtrack()
+        }
+        if (audioRef.current && audioRef.current.paused) {
+          audioRef.current.play().catch(() => {})
+        }
       }
     }
 
@@ -234,7 +232,7 @@ const RealmVideo = () => {
         },
         onLeave: () => {
           isPinnedRef.current = false
-          stopSoundtrack()
+          // Keep music playing continuously through all remaining chapters & climax till the end!
           if (videoRef.current) {
             videoRef.current.pause()
             videoRef.current.currentTime = vidDur
@@ -242,6 +240,7 @@ const RealmVideo = () => {
         },
         onLeaveBack: () => {
           isPinnedRef.current = false
+          // Only pause if user scrolls all the way back up into the opening hero dragon video
           stopSoundtrack()
           if (videoRef.current) {
             videoRef.current.pause()
@@ -252,7 +251,7 @@ const RealmVideo = () => {
           const vid = videoRef.current
           if (!vid) return
 
-          // If in section and Web Audio isn't playing yet (e.g. initial gesture needed), try starting
+          // If in section and Web Audio isn't playing yet, start
           if (isPinnedRef.current && !audioSourceRef.current && audioBufferRef.current) {
             startSoundtrack()
           }
