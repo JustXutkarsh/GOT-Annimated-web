@@ -17,8 +17,51 @@ const RealmVideo = () => {
   const [videoReady, setVideoReady] = useState(false)
 
   const isPinnedRef = useRef(false)
-  const isAudioPlayingRef = useRef(false)
   const scrollTimeoutRef = useRef(null)
+
+  // Web Audio API refs for studio-quality, zero-latency playback
+  const audioCtxRef = useRef(null)
+  const audioBufferRef = useRef(null)
+  const audioSourceRef = useRef(null)
+  const gainNodeRef = useRef(null)
+
+  // Initialize Web Audio API and pre-load soundtrack buffer
+  useEffect(() => {
+    const AudioContext = window.AudioContext || window.webkitAudioContext
+    if (AudioContext) {
+      const ctx = new AudioContext()
+      audioCtxRef.current = ctx
+
+      fetch('/video/violin_bgm.wav')
+        .then((res) => res.arrayBuffer())
+        .then((arrBuf) => ctx.decodeAudioData(arrBuf))
+        .then((decoded) => {
+          audioBufferRef.current = decoded
+        })
+        .catch(() => {})
+    }
+
+    const unlockContext = () => {
+      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume()
+      }
+    }
+
+    window.addEventListener('click', unlockContext)
+    window.addEventListener('touchstart', unlockContext)
+    window.addEventListener('scroll', unlockContext)
+    window.addEventListener('keydown', unlockContext)
+
+    return () => {
+      window.removeEventListener('click', unlockContext)
+      window.removeEventListener('touchstart', unlockContext)
+      window.removeEventListener('scroll', unlockContext)
+      window.removeEventListener('keydown', unlockContext)
+      if (audioCtxRef.current) {
+        audioCtxRef.current.close().catch(() => {})
+      }
+    }
+  }, [])
 
   useEffect(() => {
     const video = videoRef.current
@@ -70,71 +113,85 @@ const RealmVideo = () => {
       handleMeta()
     }
 
-    // Global interaction listener that unlocks audio immediately on first click/touch
-    const unlockAudio = () => {
-      if (audio) {
-        audio.load()
-        if (isPinnedRef.current && !isAudioPlayingRef.current) {
-          audio.play().then(() => {
-            isAudioPlayingRef.current = true
-          }).catch(() => {})
-        }
-      }
-    }
-
-    window.addEventListener('click', unlockAudio)
-    window.addEventListener('touchstart', unlockAudio)
-    window.addEventListener('keydown', unlockAudio)
-
     return () => {
       video.removeEventListener('loadedmetadata', handleMeta)
       video.removeEventListener('canplaythrough', handleMeta)
       video.removeEventListener('timeupdate', handleTimeUpdate)
-      window.removeEventListener('click', unlockAudio)
-      window.removeEventListener('touchstart', unlockAudio)
-      window.removeEventListener('keydown', unlockAudio)
     }
   }, [])
+
+  // Web Audio + HTML5 Audio playback controller
+  const startSoundtrack = () => {
+    const ctx = audioCtxRef.current
+    const buffer = audioBufferRef.current
+
+    // Primary: Web Audio API (High volume, zero lag, bypasses element locks)
+    if (ctx && buffer) {
+      if (ctx.state === 'suspended') {
+        ctx.resume()
+      }
+
+      // Stop existing source if any
+      if (audioSourceRef.current) {
+        try {
+          audioSourceRef.current.stop()
+          audioSourceRef.current.disconnect()
+        } catch (_) {}
+      }
+
+      const source = ctx.createBufferSource()
+      source.buffer = buffer
+      source.loop = true
+
+      const gain = ctx.createGain()
+      gain.gain.setValueAtTime(1.8, ctx.currentTime) // Boosted loud and clear
+
+      source.connect(gain)
+      gain.connect(ctx.destination)
+      source.start(0)
+
+      audioSourceRef.current = source
+      gainNodeRef.current = gain
+    }
+
+    // Secondary Dual Fallback: HTML5 Audio
+    const audio = audioRef.current
+    if (audio) {
+      audio.currentTime = 0
+      audio.volume = 1.0
+      audio.muted = false
+      audio.play().catch(() => {})
+    }
+  }
+
+  const stopSoundtrack = () => {
+    // Stop Web Audio
+    if (audioSourceRef.current) {
+      try {
+        const ctx = audioCtxRef.current
+        if (gainNodeRef.current && ctx) {
+          gainNodeRef.current.gain.linearRampToValueAtTime(0.01, ctx.currentTime + 0.3)
+        }
+        audioSourceRef.current.stop(ctx ? ctx.currentTime + 0.3 : 0)
+      } catch (_) {}
+      audioSourceRef.current = null
+    }
+
+    // Stop HTML5 Audio
+    const audio = audioRef.current
+    if (audio) {
+      audio.pause()
+    }
+  }
 
   useEffect(() => {
     const container = containerRef.current
     const stage = stageRef.current
     const video = videoRef.current
-    const audio = audioRef.current
 
     if (!container || !stage || !video) return
 
     const vidDur = video.duration || duration || 37.13
-
-    const startSoundtrack = () => {
-      if (audio) {
-        audio.currentTime = 0
-        audio.volume = 1.0
-        audio.play().then(() => {
-          isAudioPlayingRef.current = true
-        }).catch(() => {
-          // Retry on first interaction
-          const retryPlay = () => {
-            if (audio && isPinnedRef.current) {
-              audio.play().then(() => {
-                isAudioPlayingRef.current = true
-              }).catch(() => {})
-            }
-            window.removeEventListener('click', retryPlay)
-            window.removeEventListener('scroll', retryPlay)
-          }
-          window.addEventListener('click', retryPlay, { once: true })
-          window.addEventListener('scroll', retryPlay, { once: true })
-        })
-      }
-    }
-
-    const stopSoundtrack = () => {
-      if (audio) {
-        audio.pause()
-        isAudioPlayingRef.current = false
-      }
-    }
 
     const ctx = gsap.context(() => {
       ScrollTrigger.create({
@@ -171,11 +228,6 @@ const RealmVideo = () => {
         onUpdate: (self) => {
           const vid = videoRef.current
           if (!vid) return
-
-          // If audio is in section but was paused by browser, resume it
-          if (audio && audio.paused && isPinnedRef.current) {
-            audio.play().catch(() => {})
-          }
 
           const p = self.progress
           const targetTime = p * vidDur
@@ -217,7 +269,7 @@ const RealmVideo = () => {
 
   return (
     <section ref={containerRef} className="realm-scrollytelling-section" id="realm-journey">
-      {/* Background Violin Soundtrack using pure uncompressed WAV and AAC */}
+      {/* HTML5 Audio Dual Fallback */}
       <audio
         ref={audioRef}
         src="/video/violin_bgm.wav"
