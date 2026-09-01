@@ -12,13 +12,12 @@ const RealmVideo = () => {
   const percentTextRef = useRef(null)
   const darkFadeRef = useRef(null)
 
-  const [duration, setDuration] = useState(37.13)
+  const [videoDuration, setVideoDuration] = useState(37.13)
   const [videoReady, setVideoReady] = useState(false)
 
-  // Direct scrub target and lock
-  const targetTimeRef = useRef(0)
-  const isSeekingRef = useRef(false)
-  const reqIdRef = useRef(null)
+  // Scroll and playback state
+  const isPinnedRef = useRef(false)
+  const scrollTimeoutRef = useRef(null)
 
   useEffect(() => {
     const video = videoRef.current
@@ -27,50 +26,49 @@ const RealmVideo = () => {
     video.pause()
     video.currentTime = 0
 
-    const onMeta = () => {
+    const handleMeta = () => {
       if (video.duration && !isNaN(video.duration) && video.duration > 0) {
-        setDuration(video.duration)
+        setVideoDuration(video.duration)
       }
       setVideoReady(true)
       ScrollTrigger.refresh()
     }
 
-    const onSeeked = () => {
-      isSeekingRef.current = false
-    }
+    // Timeupdate listener to update progress bar smoothly
+    const handleTimeUpdate = () => {
+      if (!video.duration) return
+      const pct = Math.min(100, Math.max(0, (video.currentTime / video.duration) * 100))
+      
+      if (progressBarRef.current) {
+        progressBarRef.current.style.width = `${Math.round(pct)}%`
+      }
+      if (percentTextRef.current) {
+        percentTextRef.current.textContent = `${Math.round(pct)}%`
+      }
 
-    video.addEventListener('loadedmetadata', onMeta)
-    video.addEventListener('canplaythrough', onMeta)
-    video.addEventListener('seeked', onSeeked)
-
-    if (video.readyState >= 1) {
-      onMeta()
-    }
-
-    // Direct, instant frame seek loop with zero lag
-    const scrubLoop = () => {
-      const vid = videoRef.current
-      if (vid && !isSeekingRef.current) {
-        const target = targetTimeRef.current
-        if (Math.abs(vid.currentTime - target) > 0.02) {
-          isSeekingRef.current = true
-          if ('fastSeek' in vid) {
-            vid.fastSeek(target)
-          } else {
-            vid.currentTime = target
-          }
+      // Smooth dark fade during the last 5% of the video
+      if (darkFadeRef.current) {
+        if (pct >= 94) {
+          const fade = (pct - 94) / 6
+          darkFadeRef.current.style.opacity = String(fade)
+        } else {
+          darkFadeRef.current.style.opacity = '0'
         }
       }
-      reqIdRef.current = requestAnimationFrame(scrubLoop)
     }
 
-    reqIdRef.current = requestAnimationFrame(scrubLoop)
+    video.addEventListener('loadedmetadata', handleMeta)
+    video.addEventListener('canplaythrough', handleMeta)
+    video.addEventListener('timeupdate', handleTimeUpdate)
+
+    if (video.readyState >= 1) {
+      handleMeta()
+    }
 
     return () => {
-      if (reqIdRef.current) cancelAnimationFrame(reqIdRef.current)
-      video.removeEventListener('loadedmetadata', onMeta)
-      video.removeEventListener('canplaythrough', onMeta)
-      video.removeEventListener('seeked', onSeeked)
+      video.removeEventListener('loadedmetadata', handleMeta)
+      video.removeEventListener('canplaythrough', handleMeta)
+      video.removeEventListener('timeupdate', handleTimeUpdate)
     }
   }, [])
 
@@ -81,53 +79,84 @@ const RealmVideo = () => {
 
     if (!container || !stage || !video) return
 
-    const vidDuration = video.duration || duration || 37.13
-    // Generous 7.5x viewport scroll distance to comfortably scrub through the entire 37 seconds
-    const scrollDistance = window.innerHeight * 7.5
+    const duration = video.duration || videoDuration || 37.13
+    // Generous scroll distance (8x viewport) ensuring the full 37.13s video plays through to 100%
+    const scrollDistance = window.innerHeight * 8.0
 
     const ctx = gsap.context(() => {
-      const tl = gsap.timeline({
-        scrollTrigger: {
-          trigger: container,
-          start: 'top top',
-          end: `+=${scrollDistance}`,
-          pin: stage,
-          pinSpacing: true,
-          scrub: 1.0,
-          anticipatePin: 1,
-          onUpdate: (self) => {
-            const p = self.progress
+      ScrollTrigger.create({
+        trigger: container,
+        start: 'top top',
+        end: `+=${scrollDistance}`,
+        pin: stage,
+        pinSpacing: true,
+        scrub: false, // We control smooth native playback directly to eliminate seek lag
+        anticipatePin: 1,
+        onEnter: () => {
+          isPinnedRef.current = true
+        },
+        onEnterBack: () => {
+          isPinnedRef.current = true
+        },
+        onLeave: () => {
+          isPinnedRef.current = false
+          if (videoRef.current) {
+            videoRef.current.pause()
+          }
+        },
+        onLeaveBack: () => {
+          isPinnedRef.current = false
+          if (videoRef.current) {
+            videoRef.current.pause()
+            videoRef.current.currentTime = 0
+          }
+        },
+        onUpdate: (self) => {
+          const vid = videoRef.current
+          if (!vid) return
 
-            // Map progress: 0% -> 90% scrubs 0s -> full 37.13s video
-            // 90% -> 100% holds final frame and smoothly fades to pitch black before chapter entrance
-            const videoProgress = Math.min(1, p / 0.90)
-            const targetTime = videoProgress * vidDuration
-            targetTimeRef.current = targetTime
+          const progress = self.progress
+          const targetTime = Math.min(duration, progress * duration)
 
-            // Progress bar
-            if (progressBarRef.current) {
-              progressBarRef.current.style.width = `${Math.round(videoProgress * 100)}%`
+          // Smooth native playback driven by scroll:
+          // If user is actively scrolling forward, play smoothly at native 60fps
+          const timeDiff = targetTime - vid.currentTime
+
+          if (timeDiff > 0.05) {
+            // Forward scroll: adjust playbackRate smoothly and play
+            const rate = Math.max(0.8, Math.min(3.0, timeDiff * 2.5))
+            vid.playbackRate = rate
+            if (vid.paused) {
+              vid.play().catch(() => {})
             }
-            if (percentTextRef.current) {
-              percentTextRef.current.textContent = `${Math.round(videoProgress * 100)}%`
-            }
 
-            // Dark fade curtain at end of video before transitioning into the Great Houses
-            if (darkFadeRef.current) {
-              if (p > 0.88) {
-                const fadeOpacity = (p - 0.88) / 0.12
-                darkFadeRef.current.style.opacity = String(fadeOpacity)
-              } else {
-                darkFadeRef.current.style.opacity = '0'
+            if (scrollTimeoutRef.current) {
+              clearTimeout(scrollTimeoutRef.current)
+            }
+            scrollTimeoutRef.current = setTimeout(() => {
+              if (vid && isPinnedRef.current) {
+                vid.pause()
               }
-            }
-          },
+            }, 120)
+          } else if (timeDiff < -0.2) {
+            // Backward scroll: step back smoothly
+            vid.pause()
+            vid.currentTime = Math.max(0, targetTime)
+          }
+
+          // Ensure video reaches 100% at end of scroll
+          if (progress >= 0.98 && vid.currentTime < duration - 0.2) {
+            vid.currentTime = duration - 0.05
+          }
         },
       })
     }, container)
 
-    return () => ctx.revert()
-  }, [videoReady, duration])
+    return () => {
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current)
+      ctx.revert()
+    }
+  }, [videoReady, videoDuration])
 
   return (
     <section ref={containerRef} className="realm-scrollytelling-section" id="realm-journey">
@@ -146,7 +175,7 @@ const RealmVideo = () => {
           <div className="realm-overlay-top-blend" />
           <div className="realm-overlay-vignette" />
           <div className="realm-overlay-bottom-blend" />
-          {/* Full Dark Transition Curtain to ensure clean handoff to Chapters */}
+          {/* Full Dark Transition Curtain to ensure clean handoff to Chapters only after full completion */}
           <div ref={darkFadeRef} className="realm-dark-fade-curtain" />
         </div>
 
