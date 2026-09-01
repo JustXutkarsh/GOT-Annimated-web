@@ -339,6 +339,17 @@
   z-index: 2;
 }
 
+.realm-dark-fade-curtain {
+  position: absolute;
+  inset: 0;
+  background-color: var(--bg-deep);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 10;
+  transition: opacity 0.1s linear;
+}
+
+
 /* Minimal Video Scrollytelling Tracker */
 .realm-minimal-scrub-bar {
   position: absolute;

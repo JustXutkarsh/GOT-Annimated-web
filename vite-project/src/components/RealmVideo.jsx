@@ -10,15 +10,14 @@ const RealmVideo = () => {
   const videoRef = useRef(null)
   const progressBarRef = useRef(null)
   const percentTextRef = useRef(null)
+  const darkFadeRef = useRef(null)
 
   const [duration, setDuration] = useState(37.13)
   const [videoReady, setVideoReady] = useState(false)
 
-  // Scroll sync refs
-  const targetProgressRef = useRef(0)
-  const currentProgressRef = useRef(0)
-  const isScrollingRef = useRef(false)
-  const scrollTimeoutRef = useRef(null)
+  // Direct scrub target and lock
+  const targetTimeRef = useRef(0)
+  const isSeekingRef = useRef(false)
   const reqIdRef = useRef(null)
 
   useEffect(() => {
@@ -36,68 +35,42 @@ const RealmVideo = () => {
       ScrollTrigger.refresh()
     }
 
+    const onSeeked = () => {
+      isSeekingRef.current = false
+    }
+
     video.addEventListener('loadedmetadata', onMeta)
     video.addEventListener('canplaythrough', onMeta)
+    video.addEventListener('seeked', onSeeked)
 
     if (video.readyState >= 1) {
       onMeta()
     }
 
-    // High-performance smooth 60fps sync engine
-    const syncLoop = () => {
+    // Direct, instant frame seek loop with zero lag
+    const scrubLoop = () => {
       const vid = videoRef.current
-      if (vid && vid.duration) {
-        const vidDur = vid.duration
-
-        // Smoothly interpolate current progress towards target scroll progress
-        const diff = targetProgressRef.current - currentProgressRef.current
-        currentProgressRef.current += diff * 0.12
-
-        const targetTime = currentProgressRef.current * vidDur
-        const timeDiff = targetTime - vid.currentTime
-
-        if (isScrollingRef.current) {
-          // If scrolling forward and difference is small, use smooth playback rate
-          if (timeDiff > 0.05 && timeDiff < 2.0) {
-            const speed = Math.max(0.5, Math.min(3.5, timeDiff * 3.0))
-            vid.playbackRate = speed
-            if (vid.paused) {
-              vid.play().catch(() => {})
-            }
-          } else if (Math.abs(timeDiff) >= 2.0 || timeDiff < -0.05) {
-            // Larger jump or backward scroll: seek directly
-            vid.pause()
-            vid.currentTime = Math.max(0, Math.min(vidDur, targetTime))
+      if (vid && !isSeekingRef.current) {
+        const target = targetTimeRef.current
+        if (Math.abs(vid.currentTime - target) > 0.02) {
+          isSeekingRef.current = true
+          if ('fastSeek' in vid) {
+            vid.fastSeek(target)
+          } else {
+            vid.currentTime = target
           }
-        } else {
-          // Scrolling stopped: snap to exact frame and pause cleanly
-          if (!vid.paused) {
-            vid.pause()
-          }
-          if (Math.abs(timeDiff) > 0.03) {
-            vid.currentTime = Math.max(0, Math.min(vidDur, targetTime))
-          }
-        }
-
-        // Update progress bar
-        if (progressBarRef.current) {
-          progressBarRef.current.style.width = `${currentProgressRef.current * 100}%`
-        }
-        if (percentTextRef.current) {
-          percentTextRef.current.textContent = `${Math.round(currentProgressRef.current * 100)}%`
         }
       }
-
-      reqIdRef.current = requestAnimationFrame(syncLoop)
+      reqIdRef.current = requestAnimationFrame(scrubLoop)
     }
 
-    reqIdRef.current = requestAnimationFrame(syncLoop)
+    reqIdRef.current = requestAnimationFrame(scrubLoop)
 
     return () => {
       if (reqIdRef.current) cancelAnimationFrame(reqIdRef.current)
-      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current)
       video.removeEventListener('loadedmetadata', onMeta)
       video.removeEventListener('canplaythrough', onMeta)
+      video.removeEventListener('seeked', onSeeked)
     }
   }, [])
 
@@ -108,46 +81,53 @@ const RealmVideo = () => {
 
     if (!container || !stage || !video) return
 
-    // Generous scroll span (5x viewport height) for comfortable pacing
-    const scrollDistance = window.innerHeight * 5.0
+    const vidDuration = video.duration || duration || 37.13
+    // Generous 7.5x viewport scroll distance to comfortably scrub through the entire 37 seconds
+    const scrollDistance = window.innerHeight * 7.5
 
     const ctx = gsap.context(() => {
-      ScrollTrigger.create({
-        trigger: container,
-        start: 'top top',
-        end: `+=${scrollDistance}`,
-        pin: stage,
-        pinSpacing: true,
-        scrub: true,
-        anticipatePin: 1,
-        onUpdate: (self) => {
-          targetProgressRef.current = self.progress
-          isScrollingRef.current = true
+      const tl = gsap.timeline({
+        scrollTrigger: {
+          trigger: container,
+          start: 'top top',
+          end: `+=${scrollDistance}`,
+          pin: stage,
+          pinSpacing: true,
+          scrub: 1.0,
+          anticipatePin: 1,
+          onUpdate: (self) => {
+            const p = self.progress
 
-          if (scrollTimeoutRef.current) {
-            clearTimeout(scrollTimeoutRef.current)
-          }
-          scrollTimeoutRef.current = setTimeout(() => {
-            isScrollingRef.current = false
-          }, 100)
-        },
-        onLeave: () => {
-          isScrollingRef.current = false
-          if (videoRef.current) {
-            videoRef.current.pause()
-          }
-        },
-        onLeaveBack: () => {
-          isScrollingRef.current = false
-          if (videoRef.current) {
-            videoRef.current.pause()
-          }
+            // Map progress: 0% -> 90% scrubs 0s -> full 37.13s video
+            // 90% -> 100% holds final frame and smoothly fades to pitch black before chapter entrance
+            const videoProgress = Math.min(1, p / 0.90)
+            const targetTime = videoProgress * vidDuration
+            targetTimeRef.current = targetTime
+
+            // Progress bar
+            if (progressBarRef.current) {
+              progressBarRef.current.style.width = `${Math.round(videoProgress * 100)}%`
+            }
+            if (percentTextRef.current) {
+              percentTextRef.current.textContent = `${Math.round(videoProgress * 100)}%`
+            }
+
+            // Dark fade curtain at end of video before transitioning into the Great Houses
+            if (darkFadeRef.current) {
+              if (p > 0.88) {
+                const fadeOpacity = (p - 0.88) / 0.12
+                darkFadeRef.current.style.opacity = String(fadeOpacity)
+              } else {
+                darkFadeRef.current.style.opacity = '0'
+              }
+            }
+          },
         },
       })
     }, container)
 
     return () => ctx.revert()
-  }, [videoReady])
+  }, [videoReady, duration])
 
   return (
     <section ref={containerRef} className="realm-scrollytelling-section" id="realm-journey">
@@ -162,10 +142,12 @@ const RealmVideo = () => {
             playsInline
             preload="auto"
           />
-          {/* Edge Vignette Overlays for clean dark transitions */}
+          {/* Edge Vignette Overlays */}
           <div className="realm-overlay-top-blend" />
           <div className="realm-overlay-vignette" />
           <div className="realm-overlay-bottom-blend" />
+          {/* Full Dark Transition Curtain to ensure clean handoff to Chapters */}
+          <div ref={darkFadeRef} className="realm-dark-fade-curtain" />
         </div>
 
         {/* Minimal Bottom Scrollytelling Tracker */}
