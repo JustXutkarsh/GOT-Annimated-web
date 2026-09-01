@@ -8,7 +8,6 @@ const RealmVideo = () => {
   const containerRef = useRef(null)
   const stageRef = useRef(null)
   const videoRef = useRef(null)
-  const audioRef = useRef(null)
   const progressBarRef = useRef(null)
   const percentTextRef = useRef(null)
   const darkFadeRef = useRef(null)
@@ -17,21 +16,16 @@ const RealmVideo = () => {
   const [videoReady, setVideoReady] = useState(false)
 
   const isPinnedRef = useRef(false)
-  const isAudioUnlockedRef = useRef(false)
   const scrollTimeoutRef = useRef(null)
 
   useEffect(() => {
     const video = videoRef.current
-    const audio = audioRef.current
     if (!video) return
 
     video.pause()
     video.currentTime = 0
-
-    if (audio) {
-      audio.volume = 0.9
-      audio.loop = true
-    }
+    video.muted = false
+    video.volume = 1.0
 
     const handleMeta = () => {
       if (video.duration && !isNaN(video.duration) && video.duration > 0) {
@@ -70,33 +64,27 @@ const RealmVideo = () => {
       handleMeta()
     }
 
-    // Global audio unlocker: primes the audio on any initial interaction anywhere on page
-    const primeAudio = () => {
-      if (audio && !isAudioUnlockedRef.current) {
-        audio.muted = false
-        audio.play().then(() => {
-          isAudioUnlockedRef.current = true
-          // If not currently in this section, pause until user scrolls to it
-          if (!isPinnedRef.current) {
-            audio.pause()
-          }
-        }).catch(() => {})
+    // Unmute on first user interaction anywhere on the screen
+    const handleFirstInteraction = () => {
+      if (video) {
+        video.muted = false
       }
+      window.removeEventListener('click', handleFirstInteraction)
+      window.removeEventListener('keydown', handleFirstInteraction)
+      window.removeEventListener('touchstart', handleFirstInteraction)
     }
 
-    window.addEventListener('click', primeAudio)
-    window.addEventListener('touchstart', primeAudio)
-    window.addEventListener('scroll', primeAudio)
-    window.addEventListener('keydown', primeAudio)
+    window.addEventListener('click', handleFirstInteraction, { once: true })
+    window.addEventListener('keydown', handleFirstInteraction, { once: true })
+    window.addEventListener('touchstart', handleFirstInteraction, { once: true })
 
     return () => {
       video.removeEventListener('loadedmetadata', handleMeta)
       video.removeEventListener('canplaythrough', handleMeta)
       video.removeEventListener('timeupdate', handleTimeUpdate)
-      window.removeEventListener('click', primeAudio)
-      window.removeEventListener('touchstart', primeAudio)
-      window.removeEventListener('scroll', primeAudio)
-      window.removeEventListener('keydown', primeAudio)
+      window.removeEventListener('click', handleFirstInteraction)
+      window.removeEventListener('keydown', handleFirstInteraction)
+      window.removeEventListener('touchstart', handleFirstInteraction)
     }
   }, [])
 
@@ -104,34 +92,29 @@ const RealmVideo = () => {
     const container = containerRef.current
     const stage = stageRef.current
     const video = videoRef.current
-    const audio = audioRef.current
 
     if (!container || !stage || !video) return
 
     const vidDur = video.duration || duration || 37.13
 
-    const playAudio = () => {
-      if (!audio) return
-      audio.muted = false
-      audio.play().catch(() => {
-        // Fallback: unlock and play on next gesture
-        const forcePlay = () => {
-          if (audio && isPinnedRef.current) {
-            audio.muted = false
-            audio.play().catch(() => {})
+    const playVideoAudio = () => {
+      if (!video) return
+      video.muted = false
+      video.volume = 1.0
+      video.play().catch(() => {
+        // Fallback: retry unmuted on next gesture
+        const onNextGesture = () => {
+          if (video && isPinnedRef.current) {
+            video.muted = false
+            video.volume = 1.0
+            video.play().catch(() => {})
           }
-          window.removeEventListener('click', forcePlay)
-          window.removeEventListener('scroll', forcePlay)
+          window.removeEventListener('click', onNextGesture)
+          window.removeEventListener('scroll', onNextGesture)
         }
-        window.addEventListener('click', forcePlay, { once: true })
-        window.addEventListener('scroll', forcePlay, { once: true })
+        window.addEventListener('click', onNextGesture, { once: true })
+        window.addEventListener('scroll', onNextGesture, { once: true })
       })
-    }
-
-    const stopAudio = () => {
-      if (audio) {
-        audio.pause()
-      }
     }
 
     const ctx = gsap.context(() => {
@@ -144,24 +127,24 @@ const RealmVideo = () => {
         anticipatePin: 1,
         onEnter: () => {
           isPinnedRef.current = true
-          playAudio()
+          playVideoAudio()
         },
         onEnterBack: () => {
           isPinnedRef.current = true
-          playAudio()
+          playVideoAudio()
         },
         onLeave: () => {
           isPinnedRef.current = false
-          stopAudio()
           if (videoRef.current) {
+            videoRef.current.muted = true
             videoRef.current.pause()
             videoRef.current.currentTime = vidDur
           }
         },
         onLeaveBack: () => {
           isPinnedRef.current = false
-          stopAudio()
           if (videoRef.current) {
+            videoRef.current.muted = true
             videoRef.current.pause()
             videoRef.current.currentTime = 0
           }
@@ -177,12 +160,9 @@ const RealmVideo = () => {
           if (timeDiff > 0.04) {
             const speed = Math.max(0.8, Math.min(3.2, timeDiff * 2.2))
             vid.playbackRate = speed
+            vid.muted = false
             if (vid.paused) {
               vid.play().catch(() => {})
-            }
-
-            if (audio && audio.paused) {
-              playAudio()
             }
 
             if (scrollTimeoutRef.current) {
@@ -207,29 +187,23 @@ const RealmVideo = () => {
 
     return () => {
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current)
-      stopAudio()
+      if (videoRef.current) {
+        videoRef.current.muted = true
+        videoRef.current.pause()
+      }
       ctx.revert()
     }
   }, [videoReady, duration])
 
   return (
     <section ref={containerRef} className="realm-scrollytelling-section" id="realm-journey">
-      {/* Background Violin Soundtrack with universal WAV + MP4 + M4A support */}
-      <audio ref={audioRef} preload="auto" loop playsInline>
-        <source src="/video/violin_bgm.wav" type="audio/wav" />
-        <source src="/video/violin_bgm.mp4" type="audio/mp4" />
-        <source src="/video/violin_bgm.m4a" type="audio/mp4" />
-        <source src="/video/Game Of Thrones - Violin _ Bgm.m4r" type="audio/mp4" />
-      </audio>
-
       <div ref={stageRef} className="realm-sticky-stage">
-        {/* Fullscreen Video Canvas */}
+        {/* Fullscreen Video Canvas with Native Embedded Violin BGM */}
         <div className="realm-video-canvas-wrapper">
           <video
             ref={videoRef}
             className="realm-scrolly-video"
             src="/video/one.mp4"
-            muted
             playsInline
             preload="auto"
           />
