@@ -1,5 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
+import { ScrollTrigger } from 'gsap/ScrollTrigger'
+
+gsap.registerPlugin(ScrollTrigger)
 
 const HeroVideo = () => {
   const containerRef = useRef(null)
@@ -8,6 +11,7 @@ const HeroVideo = () => {
   const soundBtnRef = useRef(null)
 
   const [isMuted, setIsMuted] = useState(false)
+  const userMutedPreferenceRef = useRef(false)
 
   useEffect(() => {
     const video = videoRef.current
@@ -31,26 +35,54 @@ const HeroVideo = () => {
         })
     }
 
-    // Unmute on first user interaction anywhere on screen
+    // Unmute on first user interaction anywhere on screen if within hero
     const handleFirstInteraction = () => {
-      if (video) {
+      if (video && !userMutedPreferenceRef.current && window.scrollY < window.innerHeight * 0.5) {
         video.muted = false
         setIsMuted(false)
       }
       window.removeEventListener('click', handleFirstInteraction)
-      window.removeEventListener('scroll', handleFirstInteraction)
       window.removeEventListener('keydown', handleFirstInteraction)
     }
 
     window.addEventListener('click', handleFirstInteraction, { once: true })
-    window.addEventListener('scroll', handleFirstInteraction, { once: true })
     window.addEventListener('keydown', handleFirstInteraction, { once: true })
 
     return () => {
       window.removeEventListener('click', handleFirstInteraction)
-      window.removeEventListener('scroll', handleFirstInteraction)
       window.removeEventListener('keydown', handleFirstInteraction)
     }
+  }, [])
+
+  // Auto-mute and pause 1st video when user scrolls out of hero into one.mp4
+  useEffect(() => {
+    const container = containerRef.current
+    const video = videoRef.current
+    if (!container || !video) return
+
+    const ctx = gsap.context(() => {
+      ScrollTrigger.create({
+        trigger: container,
+        start: 'top top',
+        end: 'bottom top',
+        onLeave: () => {
+          // Scrolled past hero into one.mp4: automatically mute and pause 1st video
+          video.muted = true
+          video.pause()
+          setIsMuted(true)
+        },
+        onEnterBack: () => {
+          // Scrolled back up to hero: resume playback and unmute if not manually muted by user
+          video.play().catch(() => {})
+          if (!userMutedPreferenceRef.current) {
+            video.muted = false
+            setIsMuted(false)
+          }
+        },
+      })
+    }, container)
+
+    return () => ctx.revert()
   }, [])
 
   const toggleSound = (e) => {
@@ -60,10 +92,12 @@ const HeroVideo = () => {
 
     if (video.muted) {
       video.muted = false
+      userMutedPreferenceRef.current = false
       setIsMuted(false)
       video.play()
     } else {
       video.muted = true
+      userMutedPreferenceRef.current = true
       setIsMuted(true)
     }
   }
