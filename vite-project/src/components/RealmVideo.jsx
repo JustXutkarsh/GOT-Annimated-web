@@ -15,13 +15,11 @@ const RealmVideo = () => {
 
   const [duration, setDuration] = useState(37.13)
   const [videoReady, setVideoReady] = useState(false)
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false)
 
   const isPinnedRef = useRef(false)
-  const userMutedPreferenceRef = useRef(false)
+  const isAudioUnlockedRef = useRef(false)
   const scrollTimeoutRef = useRef(null)
 
-  // Initialize and prime audio
   useEffect(() => {
     const video = videoRef.current
     const audio = audioRef.current
@@ -72,26 +70,33 @@ const RealmVideo = () => {
       handleMeta()
     }
 
-    // Global audio unlocker: user clicking or touching any part of page unlocks audio
-    const unlockAndPlay = () => {
-      if (audio && isPinnedRef.current && !userMutedPreferenceRef.current && audio.paused) {
+    // Global audio unlocker: primes the audio on any initial interaction anywhere on page
+    const primeAudio = () => {
+      if (audio && !isAudioUnlockedRef.current) {
+        audio.muted = false
         audio.play().then(() => {
-          setIsPlayingAudio(true)
+          isAudioUnlockedRef.current = true
+          // If not currently in this section, pause until user scrolls to it
+          if (!isPinnedRef.current) {
+            audio.pause()
+          }
         }).catch(() => {})
       }
     }
 
-    window.addEventListener('click', unlockAndPlay)
-    window.addEventListener('touchstart', unlockAndPlay)
-    window.addEventListener('scroll', unlockAndPlay)
+    window.addEventListener('click', primeAudio)
+    window.addEventListener('touchstart', primeAudio)
+    window.addEventListener('scroll', primeAudio)
+    window.addEventListener('keydown', primeAudio)
 
     return () => {
       video.removeEventListener('loadedmetadata', handleMeta)
       video.removeEventListener('canplaythrough', handleMeta)
       video.removeEventListener('timeupdate', handleTimeUpdate)
-      window.removeEventListener('click', unlockAndPlay)
-      window.removeEventListener('touchstart', unlockAndPlay)
-      window.removeEventListener('scroll', unlockAndPlay)
+      window.removeEventListener('click', primeAudio)
+      window.removeEventListener('touchstart', primeAudio)
+      window.removeEventListener('scroll', primeAudio)
+      window.removeEventListener('keydown', primeAudio)
     }
   }, [])
 
@@ -106,19 +111,26 @@ const RealmVideo = () => {
     const vidDur = video.duration || duration || 37.13
 
     const playAudio = () => {
-      if (!audio || userMutedPreferenceRef.current) return
+      if (!audio) return
       audio.muted = false
-      audio.play().then(() => {
-        setIsPlayingAudio(true)
-      }).catch(() => {
-        setIsPlayingAudio(false)
+      audio.play().catch(() => {
+        // Fallback: unlock and play on next gesture
+        const forcePlay = () => {
+          if (audio && isPinnedRef.current) {
+            audio.muted = false
+            audio.play().catch(() => {})
+          }
+          window.removeEventListener('click', forcePlay)
+          window.removeEventListener('scroll', forcePlay)
+        }
+        window.addEventListener('click', forcePlay, { once: true })
+        window.addEventListener('scroll', forcePlay, { once: true })
       })
     }
 
     const stopAudio = () => {
       if (audio) {
         audio.pause()
-        setIsPlayingAudio(false)
       }
     }
 
@@ -169,7 +181,7 @@ const RealmVideo = () => {
               vid.play().catch(() => {})
             }
 
-            if (audio && audio.paused && !userMutedPreferenceRef.current) {
+            if (audio && audio.paused) {
               playAudio()
             }
 
@@ -200,24 +212,6 @@ const RealmVideo = () => {
     }
   }, [videoReady, duration])
 
-  const toggleAudio = (e) => {
-    e.stopPropagation()
-    const audio = audioRef.current
-    if (!audio) return
-
-    if (audio.paused || !isPlayingAudio) {
-      audio.muted = false
-      userMutedPreferenceRef.current = false
-      audio.play().then(() => {
-        setIsPlayingAudio(true)
-      }).catch(() => {})
-    } else {
-      audio.pause()
-      userMutedPreferenceRef.current = true
-      setIsPlayingAudio(false)
-    }
-  }
-
   return (
     <section ref={containerRef} className="realm-scrollytelling-section" id="realm-journey">
       {/* Background Violin Soundtrack with universal WAV + MP4 + M4A support */}
@@ -246,19 +240,6 @@ const RealmVideo = () => {
           {/* Full Dark Transition Curtain */}
           <div ref={darkFadeRef} className="realm-dark-fade-curtain" />
         </div>
-
-        {/* Prominent High-Visibility Floating Audio Toggle Button */}
-        <button
-          onClick={toggleAudio}
-          className={`realm-audio-toggle ${isPlayingAudio ? 'is-active' : ''}`}
-          aria-label={isPlayingAudio ? 'Mute Violin Soundtrack' : 'Play Violin Soundtrack'}
-        >
-          <span className="realm-audio-icon">{isPlayingAudio ? '🎻' : '🔇'}</span>
-          <span className="realm-audio-label">
-            {isPlayingAudio ? 'VIOLIN BGM: ON' : 'ENABLE VIOLIN BGM'}
-          </span>
-          {isPlayingAudio && <span className="realm-audio-pulse" />}
-        </button>
 
         {/* Minimal Bottom Scrollytelling Tracker */}
         <div className="realm-minimal-scrub-bar">
