@@ -25,6 +25,73 @@ const RealmVideo = () => {
   const audioSourceRef = useRef(null)
   const gainNodeRef = useRef(null)
 
+  // Web Audio + HTML5 Audio playback controller
+  const startSoundtrack = () => {
+    const ctx = audioCtxRef.current
+    const buffer = audioBufferRef.current
+
+    // Primary: Web Audio API (High volume, zero lag, bypasses element locks)
+    if (ctx && buffer) {
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {})
+      }
+
+      // Stop existing source if any
+      if (audioSourceRef.current) {
+        try {
+          audioSourceRef.current.stop()
+          audioSourceRef.current.disconnect()
+        } catch (_) {}
+        audioSourceRef.current = null
+      }
+
+      try {
+        const source = ctx.createBufferSource()
+        source.buffer = buffer
+        source.loop = true
+
+        const gain = ctx.createGain()
+        gain.gain.setValueAtTime(2.0, ctx.currentTime) // Boosted loud and clear studio volume
+
+        source.connect(gain)
+        gain.connect(ctx.destination)
+        source.start(0)
+
+        audioSourceRef.current = source
+        gainNodeRef.current = gain
+      } catch (_) {}
+    }
+
+    // Secondary Fallback: HTML5 Audio
+    const audio = audioRef.current
+    if (audio) {
+      audio.currentTime = 0
+      audio.volume = 1.0
+      audio.muted = false
+      audio.play().catch(() => {})
+    }
+  }
+
+  const stopSoundtrack = () => {
+    // Stop Web Audio
+    if (audioSourceRef.current) {
+      try {
+        const ctx = audioCtxRef.current
+        if (gainNodeRef.current && ctx) {
+          gainNodeRef.current.gain.linearRampToValueAtTime(0.01, ctx.currentTime + 0.2)
+        }
+        audioSourceRef.current.stop(ctx ? ctx.currentTime + 0.2 : 0)
+      } catch (_) {}
+      audioSourceRef.current = null
+    }
+
+    // Stop HTML5 Audio
+    const audio = audioRef.current
+    if (audio) {
+      audio.pause()
+    }
+  }
+
   // Initialize Web Audio API and pre-load soundtrack buffer
   useEffect(() => {
     const AudioContext = window.AudioContext || window.webkitAudioContext
@@ -32,18 +99,38 @@ const RealmVideo = () => {
       const ctx = new AudioContext()
       audioCtxRef.current = ctx
 
-      fetch('/video/violin_bgm.wav')
+      // Load fast 240KB AAC stream
+      fetch('/video/violin_bgm.m4a')
         .then((res) => res.arrayBuffer())
         .then((arrBuf) => ctx.decodeAudioData(arrBuf))
         .then((decoded) => {
           audioBufferRef.current = decoded
+          // If the user is already inside Realm section when audio finishes loading, start immediately!
+          if (isPinnedRef.current) {
+            startSoundtrack()
+          }
         })
-        .catch(() => {})
+        .catch(() => {
+          // Fallback to WAV
+          fetch('/video/violin_bgm.wav')
+            .then((res) => res.arrayBuffer())
+            .then((arrBuf) => ctx.decodeAudioData(arrBuf))
+            .then((decoded) => {
+              audioBufferRef.current = decoded
+              if (isPinnedRef.current) {
+                startSoundtrack()
+              }
+            })
+            .catch(() => {})
+        })
     }
 
     const unlockContext = () => {
       if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-        audioCtxRef.current.resume()
+        audioCtxRef.current.resume().catch(() => {})
+      }
+      if (audioRef.current && isPinnedRef.current && audioRef.current.paused) {
+        audioRef.current.play().catch(() => {})
       }
     }
 
@@ -120,70 +207,6 @@ const RealmVideo = () => {
     }
   }, [])
 
-  // Web Audio + HTML5 Audio playback controller
-  const startSoundtrack = () => {
-    const ctx = audioCtxRef.current
-    const buffer = audioBufferRef.current
-
-    // Primary: Web Audio API (High volume, zero lag, bypasses element locks)
-    if (ctx && buffer) {
-      if (ctx.state === 'suspended') {
-        ctx.resume()
-      }
-
-      // Stop existing source if any
-      if (audioSourceRef.current) {
-        try {
-          audioSourceRef.current.stop()
-          audioSourceRef.current.disconnect()
-        } catch (_) {}
-      }
-
-      const source = ctx.createBufferSource()
-      source.buffer = buffer
-      source.loop = true
-
-      const gain = ctx.createGain()
-      gain.gain.setValueAtTime(1.8, ctx.currentTime) // Boosted loud and clear
-
-      source.connect(gain)
-      gain.connect(ctx.destination)
-      source.start(0)
-
-      audioSourceRef.current = source
-      gainNodeRef.current = gain
-    }
-
-    // Secondary Dual Fallback: HTML5 Audio
-    const audio = audioRef.current
-    if (audio) {
-      audio.currentTime = 0
-      audio.volume = 1.0
-      audio.muted = false
-      audio.play().catch(() => {})
-    }
-  }
-
-  const stopSoundtrack = () => {
-    // Stop Web Audio
-    if (audioSourceRef.current) {
-      try {
-        const ctx = audioCtxRef.current
-        if (gainNodeRef.current && ctx) {
-          gainNodeRef.current.gain.linearRampToValueAtTime(0.01, ctx.currentTime + 0.3)
-        }
-        audioSourceRef.current.stop(ctx ? ctx.currentTime + 0.3 : 0)
-      } catch (_) {}
-      audioSourceRef.current = null
-    }
-
-    // Stop HTML5 Audio
-    const audio = audioRef.current
-    if (audio) {
-      audio.pause()
-    }
-  }
-
   useEffect(() => {
     const container = containerRef.current
     const stage = stageRef.current
@@ -229,6 +252,11 @@ const RealmVideo = () => {
           const vid = videoRef.current
           if (!vid) return
 
+          // If in section and Web Audio isn't playing yet (e.g. initial gesture needed), try starting
+          if (isPinnedRef.current && !audioSourceRef.current && audioBufferRef.current) {
+            startSoundtrack()
+          }
+
           const p = self.progress
           const targetTime = p * vidDur
           const timeDiff = targetTime - vid.currentTime
@@ -272,7 +300,7 @@ const RealmVideo = () => {
       {/* HTML5 Audio Dual Fallback */}
       <audio
         ref={audioRef}
-        src="/video/violin_bgm.wav"
+        src="/video/violin_bgm.m4a"
         preload="auto"
         loop
         playsInline
