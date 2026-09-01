@@ -27,8 +27,9 @@ const ClimaxSection = () => {
         scrollTrigger: {
           trigger: containerRef.current,
           start: 'top top',
-          end: '+=180%',
+          end: 'bottom bottom',
           pin: stickyRef.current,
+          pinSpacing: false,
           scrub: 1.2,
           anticipatePin: 1,
         },

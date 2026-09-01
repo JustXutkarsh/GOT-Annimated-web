@@ -24,8 +24,9 @@ const HouseChapter = ({ house, index, totalHouses }) => {
         scrollTrigger: {
           trigger: containerRef.current,
           start: 'top top',
-          end: '+=160%',
+          end: 'bottom bottom',
           pin: stickyRef.current,
+          pinSpacing: false,
           scrub: 1.2,
           anticipatePin: 1,
         },

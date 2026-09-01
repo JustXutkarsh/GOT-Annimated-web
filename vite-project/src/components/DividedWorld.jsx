@@ -22,8 +22,9 @@ const DividedWorld = () => {
         scrollTrigger: {
           trigger: containerRef.current,
           start: 'top top',
-          end: '+=150%',
+          end: 'bottom bottom',
           pin: stickyRef.current,
+          pinSpacing: false,
           scrub: 1.2,
           anticipatePin: 1,
         },
