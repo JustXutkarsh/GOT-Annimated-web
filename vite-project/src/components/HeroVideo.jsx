@@ -26,6 +26,7 @@ const HeroVideo = () => {
       playPromise
         .then(() => {
           setIsMuted(false)
+          window.__gotSoundEnabled = true
         })
         .catch(() => {
           // Browser prevented autoplay with sound without prior user interaction
@@ -40,17 +41,21 @@ const HeroVideo = () => {
       if (video && !userMutedPreferenceRef.current && window.scrollY < window.innerHeight * 0.5) {
         video.muted = false
         setIsMuted(false)
+        window.__gotSoundEnabled = true
       }
       window.removeEventListener('click', handleFirstInteraction)
       window.removeEventListener('keydown', handleFirstInteraction)
+      window.removeEventListener('touchstart', handleFirstInteraction)
     }
 
     window.addEventListener('click', handleFirstInteraction, { once: true })
     window.addEventListener('keydown', handleFirstInteraction, { once: true })
+    window.addEventListener('touchstart', handleFirstInteraction, { once: true })
 
     return () => {
       window.removeEventListener('click', handleFirstInteraction)
       window.removeEventListener('keydown', handleFirstInteraction)
+      window.removeEventListener('touchstart', handleFirstInteraction)
     }
   }, [])
 
@@ -77,6 +82,7 @@ const HeroVideo = () => {
           if (!userMutedPreferenceRef.current) {
             video.muted = false
             setIsMuted(false)
+            window.__gotSoundEnabled = true
           }
         },
       })
@@ -94,11 +100,15 @@ const HeroVideo = () => {
       video.muted = false
       userMutedPreferenceRef.current = false
       setIsMuted(false)
+      window.__gotSoundEnabled = true
       video.play()
+      window.dispatchEvent(new CustomEvent('gotSoundToggled', { detail: { enabled: true } }))
     } else {
       video.muted = true
       userMutedPreferenceRef.current = true
       setIsMuted(true)
+      window.__gotSoundEnabled = false
+      window.dispatchEvent(new CustomEvent('gotSoundToggled', { detail: { enabled: false } }))
     }
   }
 
